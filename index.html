@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quadrarchy: Rift Shift</title>
+<style>
+body{margin:0;background:#101c2b;color:#eef8ff;font:16px system-ui}main{max-width:760px;margin:auto;padding:20px}h1{margin:4px 0}p{color:#bbd6eb}svg{width:100%;max-height:62vh;background:#152b41;border-radius:18px}svg g{cursor:pointer}svg g:focus polygon{stroke:#fff;stroke-width:3}svg text{fill:#fff;text-anchor:middle;dominant-baseline:central;pointer-events:none;font:bold 20px system-ui}button{font:inherit;background:#224560;color:white;border:1px solid #65abc9;border-radius:8px;padding:8px 14px;margin:6px 4px 0 0}button:disabled{opacity:.45}.tag{color:#70eddf;letter-spacing:.2em;font-size:12px}#message{min-height:2.8em}
+</style>
+<main><div class="tag">QUADRARCHY / GAME OFF 2026</div><h1>Rift Shift</h1><p>Recover both beacons and reach extraction. Click a neighboring hex to move. Shift the ice to move its three rows sideways. Each action gives the sentries a turn.</p>
+<svg id="board" viewBox="0 0 458 345" aria-label="Tactical map"></svg>
+<button id="shift">Shift ice (Space)</button><button id="restart">Restart</button>
+<p id="message" role="status"></p><p>● Scout　◆ Beacon　⬡ Extraction　✖ Sentry　 Dark blue: open water</p></main>
+<script>
+const W=8,H=6;
+const maps=[
+ {ice:['########','##..####','###..###','####..##','########','########'], start:[0,2], exit:[7,3], beacons:[[2,0],[6,5]], enemies:[[5,0],[7,5]]},
+ {ice:['########','#...####','###...##','##...###','########','########'], start:[0,4], exit:[7,1], beacons:[[1,0],[5,5]], enemies:[[6,0],[4,4]]}
+];
+let level=0, phase, player, enemies, beacons, hp, turns, done, won;
+const board=document.querySelector('#board'), shift=document.querySelector('#shift'), status=document.querySelector('#message');
+const same=(a,b)=>a[0]===b[0]&&a[1]===b[1];
+function near([x,y]){let o=y%2;return [[x-1,y],[x+1,y],[x-1+o,y-1],[x+o,y-1],[x-1+o,y+1],[x+o,y+1]].filter(([a,b])=>a>=0&&a<W&&b>=0&&b<H);}
+function land([x,y],p=phase){const row=maps[level].ice[y];return row[(x+(y>=1&&y<=3?W-p:0))%W]==='#';}
+function setup(){const m=maps[level];phase=0;player=[...m.start];enemies=m.enemies.map(e=>[...e]);beacons=m.beacons.map(e=>[...e]);hp=4;turns=0;done=won=false;draw('Recover the beacons.');}
+function enemyTurn(){let hits=0;for(let i=0;i<enemies.length;i++){
+ const e=enemies[i], adj=near(e);
+ if(adj.some(p=>same(p,player))){hits++;continue;}
+ const choices=adj.filter(p=>land(p)&&!enemies.some(q=>same(p,q)));
+ const dist=([x,y])=>Math.abs(x-player[0])+Math.abs(y-player[1]);
+ choices.sort((a,b)=>dist(a)-dist(b));
+ if(choices.length&&dist(choices[0])<dist(e))enemies[i]=choices[0];
+ }hp-=hits;if(hp<=0)done=true;return hits;}
+function action(p){if(done)return;
+ let msg='';
+ if(p){if(!near(player).some(q=>same(q,p))||!land(p)||enemies.some(q=>same(p,q)))return;player=p;}
+ else{const next=(phase+1)%W;if(!land(player,next)){draw('Shift blocked: the scout would fall into open water.');return;}phase=next;const before=enemies.length;enemies=enemies.filter(q=>land(q));msg=before>enemies.length?'A sentry fell through the ice. ': 'Ice shifted east. ';}
+ turns++;beacons=beacons.filter(q=>!same(q,player));if(!beacons.length&&same(player,maps[level].exit)){done=won=true;draw('Extraction complete.');return;}
+ const hits=enemyTurn();draw(msg+(hits?'Sentry hit! ':'')+(done?'Scout lost. Restart to try again.':''));
+}
+function draw(msg=''){
+ board.replaceChildren();
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+ const p=[x,y], cx=30+x*51+(y%2)*25.5,cy=34+y*54, valid=land(p), group=make('g');
+ const marker=same(p,player)?'●':enemies.some(q=>same(p,q))?'✖':beacons.some(q=>same(p,q))?'◆':same(p,maps[level].exit)?'⬡':'';
+ const hex=make('polygon');hex.setAttribute('points',Array.from({length:6},(_,i)=>{const a=(i*60-90)*Math.PI/180;return [cx+29*Math.cos(a),cy+29*Math.sin(a)].join(',');}).join(' '));
+ hex.setAttribute('fill',marker==='●'?'#148a82':marker==='✖'?'#9b4564':valid?(y>=1&&y<=3?'#387a9f':'#325571'):'#101b33');
+ hex.setAttribute('stroke',near(player).some(q=>same(q,p))&&valid?'#85c5df':'#243f55');
+ group.append(hex);if(marker){let label=make('text');label.setAttribute('x',cx);label.setAttribute('y',cy);label.textContent=marker;group.append(label);}
+ if(!done&&valid&&near(player).some(q=>same(q,p))&&!enemies.some(q=>same(q,p))){group.setAttribute('tabindex','0');group.setAttribute('role','button');group.setAttribute('aria-label','Move to column '+(x+1)+', row '+(y+1));group.onclick=()=>action(p);group.onkeydown=e=>{if(e.key==='Enter')action(p);};}board.append(group);
+ }
+ status.textContent='Mission '+(level+1)+'/'+maps.length+' · Armor '+Math.max(0,hp)+' · Beacons left '+beacons.length+' · Turn '+turns+'. '+msg+(won&&level===maps.length-1?' Both missions complete.':'');
+ shift.disabled=done&&(!won||level===maps.length-1);
+ shift.textContent=won&&level<maps.length-1?'Next mission':'Shift ice (Space)';
+}
+function make(tag){return document.createElementNS('http://www.w3.org/2000/svg',tag);}
+shift.onclick=()=>{if(won&&level<maps.length-1){level++;setup();}else action(null);};
+document.querySelector('#restart').onclick=setup;
+document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat&&!(e.target instanceof HTMLButtonElement)){e.preventDefault();shift.click();}});
+setup();
+</script></html>
